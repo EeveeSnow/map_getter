@@ -2,9 +2,13 @@ import io
 import requests
 import pygame as pg
 import PIL.Image as Image
+from pygame.rect import Rect
+import pygame_gui
+from pygame_gui.elements.ui_text_entry_line import UITextEntryLine
 
 pg.init()
 screen = pg.display.set_mode((640 + 600, 480 + 450))
+manager = pygame_gui.UIManager((640 + 600, 480 + 450))
 COLOR_INACTIVE = pg.Color('lightskyblue3')
 COLOR_ACTIVE = pg.Color('dodgerblue2')
 FONT = pg.font.Font(None, 32)
@@ -31,52 +35,6 @@ def to_img(response):
     code = Image.open(io.BytesIO(response))
     img.paste(code, (0, 0))
     img.save("Map.png")
-
-
-class InputBox:
-
-    def __init__(self, x, y, w, h, text=''):
-        self.rect = pg.Rect(x, y, w, h)
-        self.color = COLOR_INACTIVE
-        self.text = text
-        self.txt_surface = FONT.render(text, True, self.color)
-        self.active = False
-
-    def handle_event(self, event):
-        if event.type == pg.MOUSEBUTTONDOWN:
-            # If the user clicked on the input_box rect.
-            if self.rect.collidepoint(event.pos):
-                # Toggle the active variable.
-                self.active = not self.active
-            else:
-                self.active = False
-            # Change the current color of the input box.
-            self.color = COLOR_ACTIVE if self.active else COLOR_INACTIVE
-        if event.type == pg.KEYDOWN:
-            if self.active:
-                if event.key == pg.K_RETURN:
-                    print(self.text)
-                elif event.key == pg.K_BACKSPACE:
-                    self.text = self.text[:-1]
-                else:
-                    self.text += event.unicode
-                # Re-render the text.
-                self.txt_surface = FONT.render(self.text, True, self.color)
-
-    def update(self):
-        # Resize the box if the text is too long.
-        width = max(200, self.txt_surface.get_width()+10)
-        self.rect.w = width
-
-    def draw(self, screen):
-        # Blit the text.
-        screen.blit(self.txt_surface, (self.rect.x+5, self.rect.y+5))
-        # Blit the rect.
-        pg.draw.rect(screen, self.color, self.rect, 2)
-
-    @property
-    def return_text(self):
-        return self.text
 
 
 class Button:
@@ -120,45 +78,90 @@ class Button:
             (valueSurf.get_rect().height / 2)
         screen.blit(valueSurf, (textx, texty))
 
-
 def main():
     clock = pg.time.Clock()
-    input_box1 = InputBox(100, 100, 100, 32)
-    input_box2 = InputBox(100, 200, 100, 32)
-    input_box3 = InputBox(100, 300, 100, 32)
+    input_box1 = UITextEntryLine(relative_rect=Rect(100, 100, 100, 32), manager=manager)
+    input_box2 = UITextEntryLine(relative_rect=Rect(100, 200, 100, 32), manager=manager)
+    input_box3 = UITextEntryLine(relative_rect=Rect(100, 300, 100, 32), manager=manager)
     button = Button((100, 400), butWidth=140, text="map")
-    input_boxes = [input_box1, input_box2, input_box3]
     done = False
-    api = request()
     img = "None.png"
+    font = pg.font.SysFont("Segoe UI", 30)
     while not done:
         for event in pg.event.get():
             mousePos = pg.mouse.get_pos()
             if event.type == pg.QUIT:
                 done = True
-            for box in input_boxes:
-                box.handle_event(event)
+            if event.type == pg.USEREVENT:
+                if event.user_type == pygame_gui.UI_TEXT_ENTRY_FINISHED:
+                    if event.ui_element == input_box1:
+                        lon = event.text
+                    if event.ui_element == input_box2:
+                        lat = event.text
+                    if event.ui_element == input_box3:
+                        delta = event.text
+            if event.type == pg.KEYUP and event.key == pg.K_PAGEDOWN:
+                delta_fl = float(delta) + 0.01
+                if delta_fl <= 90:
+                    delta = str(delta_fl)
+                img = map(lon, lat, delta)
+            if event.type == pg.KEYUP and event.key == pg.K_PAGEUP:
+                delta_fl = float(delta) - 0.01
+                if delta_fl >= 0:
+                    delta = str(delta_fl)
+                img = map(lon, lat, delta)
+            if event.type == pg.KEYUP and event.key == pg.K_RIGHT:
+                lon_fl = float(lon) + 0.01
+                if lon_fl < 180:
+                    lon = str(lon_fl)
+                img = map(lon, lat, delta)
+            if event.type == pg.KEYUP and event.key == pg.K_LEFT:
+                lon_fl = float(lon) - 0.01
+                if lon_fl > -180:
+                    lon = str(lon_fl)
+                img = map(lon, lat, delta)
+            if event.type == pg.KEYUP and event.key == pg.K_UP:
+                lat_fl = float(lat) + 0.01
+                if lat_fl < 180:
+                    lat = str(lat_fl)
+                img = map(lon, lat, delta)
+            if event.type == pg.KEYUP and event.key == pg.K_DOWN:
+                lat_fl = float(lat) - 0.01
+                if lat_fl > -180:
+                    lat = str(lat_fl)
+                img = map(lon, lat, delta)
             if event.type == pg.MOUSEBUTTONDOWN and button.mouse_in(mousePos) is True:
-                bytes_code = api.get(lon, lat, delta)
-                if bytes_code != "bad":
-                    bytes_code = bytes_code.content
-                    to_img(bytes_code)
-                    img = "Map.png"
-        for box in input_boxes:
-            box.update()
+                img = map(lon, lat, delta)
+            manager.process_events(event)
         screen.fill((30, 30, 30))
+        manager.update(clock.tick(30)/1000.0)
+        manager.draw_ui(screen)
         image = pg.image.load(img)
         rect = (300, 100, 100, 50)
         screen.blit(image, rect)
+        try:
+            lon_txt = font.render(f"{lon}", True, (112, 112, 112))
+            lat_txt = font.render(f"{lat}", True, (112, 112, 112))
+            delta_txt = font.render(f"{delta}", True, (112, 112, 112))
+            screen.blit(lon_txt, (100, 500))
+            screen.blit(lat_txt, (100, 550))
+            screen.blit(delta_txt, (100, 600))
+        except:
+            pass
         button.render(screen)
-        lon = input_box1.return_text
-        lat = input_box2.return_text
-        delta = input_box3.return_text
-        for box in input_boxes:
-            box.draw(screen)
         pg.display.flip()
         clock.tick(30)
 
+def map(lon, lat, delta):
+    api_map = request()
+    bytes_code = api_map.get(lon, lat, delta)
+    if bytes_code != "bad":
+        bytes_code = bytes_code.content
+        to_img(bytes_code)
+        img = "Map.png"
+    else:
+        img ="None.png"
+    return img
 
 if __name__ == '__main__':
     main()
